@@ -19,7 +19,9 @@ bcftools filter -i 'FORMAT/DP>=5 & MQ>=30 & FORMAT/GQ >=20 & AC >=5 & F_MISSING 
 bgzip -f final.vcf
 ```
 
-Call SNPs and INDELs across individuals using samtools/bcftools. Filter (mapping quality, proper pairs, MAF) and redirect SNPs from repeat regions or potential paralogous sites into distinct files. Once started, the pipeline will carry on through SNP filtering, automatically sbatching jobs when appropriate. If applied on startup, user will receive an email when pipeline is finished. Various ways to customize available, see help and usage below.
+Call SNPs and INDELs across individuals using samtools/bcftools. Once started, the pipeline will carry on through SNP filtering, automatically sbatching jobs when appropriate. If applied on startup, user will receive an email when pipeline is finished. Various ways to customize available, see help and usage below.
+
+I HAVE NOT UPDATED ANYTHING BELOW HERE TO REFLECT THE BCFTOOLS PIPELINE
 
 ---
 ## Pipeline workflow
