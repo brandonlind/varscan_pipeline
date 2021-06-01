@@ -35,6 +35,7 @@ text = f'''#!/bin/bash
 #SBATCH --output={pool}-{samp}-indelRealign_%j.out 
 {email_text}
 
+module load StdEnv/2018.3
 module load java
 module load gatk/3.8
 export _JAVA_OPTIONS="-Xms256m -Xmx7g"
@@ -44,7 +45,8 @@ module unload gatk
 
 # sbatch varscan jobs if all pooled bamfiles have been created
 source {bash_variables}
-python $HOME/pipeline/start_varscan.py {parentdir} {pool}
+# python $HOME/pipeline/start_varscan.py {parentdir} {pool}
+python $HOME/pipeline/start_bcftools.py {parentdir} {pool}
 python $HOME/pipeline/balance_queue.py bedfile {parentdir}
 
 '''

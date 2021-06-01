@@ -148,44 +148,34 @@ else:
         cmds.append(f"rsync -azv {hostname}:{datatable} {datatabledst}")  # no need to add to newdirs
 
 
-# get varscan output
-print(Bcolors.BOLD + '\nBundling varscan output ...' + Bcolors.ENDC)
+# get bcftools output
+print(Bcolors.BOLD + '\nBundling bcftools output ...' + Bcolors.ENDC)
 paralogs = pklload(op.join(parentdir, 'paralog_snps.pkl'))  # used to determine if PARALOGS file is expected
 repeats = pklload(op.join(parentdir, 'repeat_regions.pkl'))  # used to determine if REPEATS file is expected
-poolseqcmd = vars(pklload(op.join(parentdir, 'pipeline_start_command.pkl')))
 for p in pooldirs:
     pool = op.basename(p)
-    varscan = op.join(p, 'varscan')
-    if not op.exists(varscan):
-        warning = f"\n\tWARN: varscan dir does not exist for pool: {op.basename(p)}"
+    bcftools = op.join(p, 'bcftools')
+    if not op.exists(bcftools):
+        warning = f"\n\tWARN: bcftools dir does not exist for pool: {op.basename(p)}"
         print(Bcolors.BOLD + Bcolors.WARNING + warning + Bcolors.ENDC)
         askforinput(tab='\t', newline='')
         continue
-    remotevarscan = op.join(remote, f'{op.basename(p)}/snpsANDindels')
-    newdirs.append(remotevarscan)
-    remote_unfiltered = op.join(remotevarscan, '01_unfiltered')
+    remotebcftools = op.join(remote, f'{op.basename(p)}/snpsANDindels')
+    newdirs.append(remotebcftools)
+    remote_unfiltered = op.join(remotebcftools, '01_unfiltered')
     newdirs.append(remote_unfiltered)
-    md5files = [f for f in fs(varscan) if f.endswith('.md5') and '_all_' not in f]
-    srcfiles = [f for f in fs(varscan) if f.endswith('.gz') or f.endswith('.txt') and '_all_' not in f]
+    md5files = [f for f in fs(bcftools) if f.endswith('.md5') and '_all_' not in f]
+    srcfiles = [f for f in fs(bcftools) if f.endswith('.gz') or f.endswith('.txt') and '_all_' not in f]
     cmds.extend(get_cmds(srcfiles, md5files, remote_unfiltered, generate_md5))
     # double check for _all_SNPs and _all_INDELs +/- _all_PARALOGS _all_REPEATS (baseline filtered)
-    md5files = [f for f in fs(varscan) if f.endswith('.md5') and '_all_' in f]
-    srcfiles = [f for f in fs(varscan) if f.endswith('.txt') and '_all_' in f]
-    # determine the number of srcfiles that should be expected
-    expected = ['SNP','INDEL']
-    if poolseqcmd['repeats'] is True and repeats[pool] is not None:
-        expected.append('REPEATS')
-    if poolseqcmd['paralogs'] is True and paralogs[pool] is not None:
-        expected.append('PARALOGS')
-    if not len(srcfiles) == len(expected):
-        warning = f"\n\tWARN: There are not {len(expected)} all-files ({' + '.join(expected)}) which are expected output for pool: {op.basename(p)}"
-        warning = warning + f"\n\tWARN: Here are the {len(srcfiles)} files I found:\n"
-        warning = warning + "\t" + "\n\t".join(srcfiles)
+    md5files = [f for f in fs(bcftools) if f.endswith('.md5') and '_all_' in f]
+    srcfiles = [f for f in fs(bcftools) if f.endswith('.vcf.gz') and '_all_' in f]
+    print(srcfiles)
+    # stop if it can't find the final vcf file
+    if not len(srcfiles) == 1:
+        warning = f"\n\tWARN: There is not an combined vcf file, which is expected output for pool: {op.basename(p)}"
         print(Bcolors.BOLD + Bcolors.WARNING + warning + Bcolors.ENDC)
         askforinput(tab='\t', newline='')
-    remote_filtered = op.join(remotevarscan, '02_baseline_filtered')
-    newdirs.append(remote_filtered)
-    cmds.extend(get_cmds(srcfiles, md5files, remote_filtered, generate_md5))
 
 
 # write commands to file

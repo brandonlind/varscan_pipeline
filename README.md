@@ -8,18 +8,18 @@
 [![Codacy Badge](https://api.codacy.com/project/badge/Grade/559e9dd133a04f838a87582e79f0587b)](https://www.codacy.com/app/brandonlind/poolseq_pipline?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=CoAdaptree/poolseq_pipline&amp;utm_campaign=Badge_Grade)
 [![codecov](https://codecov.io/gh/CoAdaptree/poolseq_pipeline/branch/master/graph/badge.svg)](https://codecov.io/gh/CoAdaptree/poolseq_pipeline)
 
+# bcftools individually sequenced pipeline
 
-### Usage    
+WARNING - THIS IS NOT THE VARSCAN PIPELINE, THIS IS USED FOR INDIVIDUAL DATA. ALL SAMPLES ARE ASSUMED TO BE DIPLOID - THE PLOIDY COLUMN ISN'T USED. THIS PIPELINE WILL END WITH RAW UNFILTERED SNPS IN VCF FORMAT. TRIMMING, MAPPING, AND PARALLELIZATION ARE THE SAME AS VARSCAN PIPELINE (except depth > 5 for each sample, AC>=5). OTHER FEATURES ARE NOT AVAILABLE:  `--translate` `--rm_paralogs` `--rm_repeats`
 
-If you use or are inspired by code from this repo, please site related manuscripts and data including, but not limited to:
+```
+# the final steps of the pipeline are as follows for each parallel call (determined by bedfiles) - after this, all vcfs are combined with bcftools concat
+bcftools mpileup --min-MQ 30 --min-BQ 20 -B -f [ref] [bamfiles] | -a "DP,AD" | /home/lindb/src/bcftools-1.11/bcftools call -G - -Ov -mv -f GQ,GP > initial.vcf
+bcftools filter -i 'FORMAT/DP>=5 & MQ>=30 & FORMAT/GQ >=20 & AC >=5 & F_MISSING <0.25' initial.vcf > final.vcf
+bgzip -f final.vcf
+```
 
-Lind et al. (2020) Haploid, diploid, and pooled exome capture recapitulate features of biology and paralogy in two non-model tree species. bioRxiv https://doi.org/10.1101/2020.10.07.329961
-
----
-
-# VarScan poolseq pipeline
-
-Call SNPs and INDELs across pooled populations using VarScan. Filter (mapping quality, proper pairs, MAF, GQ, missing data) and redirect SNPs from repeat regions or potential paralogous sites into distinct files. Once started, the pipeline will carry on through SNP filtering, automatically sbatching jobs when appropriate. If applied on startup, user will receive an email when pipeline is finished. Various ways to customize available, see help and usage below.
+Call SNPs and INDELs across individuals using samtools/bcftools. Filter (mapping quality, proper pairs, MAF) and redirect SNPs from repeat regions or potential paralogous sites into distinct files. Once started, the pipeline will carry on through SNP filtering, automatically sbatching jobs when appropriate. If applied on startup, user will receive an email when pipeline is finished. Various ways to customize available, see help and usage below.
 
 ---
 ## Pipeline workflow

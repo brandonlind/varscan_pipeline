@@ -27,6 +27,7 @@ from subprocess import PIPE
 from subprocess import Popen
 from collections import OrderedDict
 from coadaptree import fs, pkldump, uni, makedir, askforinput, Bcolors, luni
+from tqdm import tqdm
 
 def get_rgid(r1):
     """If RGID is blank, print out the output that the pipeline would otherwise use."""
@@ -91,9 +92,10 @@ def get_datafiles(parentdir, f2pool, data):
         pass
 
     # create symlinks in pooldirs for visualization
-    for f in datafiles:
+    for f in tqdm(datafiles):
         src = op.join(parentdir, f)
-        if not op.exists(src):
+#         if not op.exists(src):
+        if not src in files:
             # make sure file in datatable exists
             print("could not find %s in %s\nmake sure file_name in datatable is its basename" % (f, parentdir))
             print("(symlinks in parentdir to fastq files in other dirs works fine, and is the intentional use)")
@@ -714,6 +716,9 @@ please check input\n' + Bcolors.ENDC)
 
 
 def main():
+    print(Bcolors.BOLD + Bcolors.WARNING + 'THIS IS THE ADAPTREE-MODIFIED FORK!!!' + Bcolors.ENDC)
+    askforinput()
+    
     # parse arguments
     args = get_pars()
 
@@ -761,7 +766,7 @@ if __name__ == '__main__':
                                               |
                                               |
 
-                             VarScan pipeline
+                             bcftools pipeline
 
 *****************************************************************************
 
