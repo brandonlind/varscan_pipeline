@@ -10,18 +10,18 @@
 
 # bcftools individually sequenced pipeline
 
-WARNING - THIS IS NOT THE VARSCAN PIPELINE, THIS IS USED FOR INDIVIDUAL DATA. ALL SAMPLES ARE ASSUMED TO BE DIPLOID - THE PLOIDY COLUMN ISN'T USED. THIS PIPELINE WILL END WITH RAW UNFILTERED SNPS IN VCF FORMAT. TRIMMING, MAPPING, AND PARALLELIZATION ARE THE SAME AS VARSCAN PIPELINE (except depth > 5 for each sample, AC>=5). OTHER FEATURES ARE NOT AVAILABLE:  `--translate` `--rm_paralogs` `--rm_repeats`
+WARNING - THIS IS NOT THE VARSCAN PIPELINE, THIS IS USED FOR INDIVIDUAL DATA. THE PLOIDY INFORMATION FOR EACH SAMPLE IS PASSED TO BCFTOOLS WITH --samples-file. THIS PIPELINE WILL END WITH MINIMALLY FILTERED SNPS IN VCF FORMAT (MAF >= 0.0, MQ >=20, GQ>=20, missing data < 25%). TRIMMING, MAPPING, AND PARALLELIZATION ARE THE SAME AS VARSCAN PIPELINE (except depth > 5 for each sample, AC>=5). OTHER FEATURES ARE NOT AVAILABLE:  `--translate` `--rm_paralogs` `--rm_repeats`
 
 ```
 # the final steps of the pipeline are as follows for each parallel call (determined by bedfiles) - after this, all vcfs are combined with bcftools concat
-bcftools mpileup --min-MQ 30 --min-BQ 20 -B -f [ref] [bamfiles] | -a "DP,AD" | /home/lindb/src/bcftools-1.11/bcftools call -G - -Ov -mv -f GQ,GP > initial.vcf
-bcftools filter -i 'FORMAT/DP>=5 & MQ>=30 & FORMAT/GQ >=20 & AC >=5 & F_MISSING <0.25' initial.vcf > final.vcf
+bcftools mpileup --min-MQ 20 --min-BQ 20 -B -f [ref] [bamfiles] | -a "DP,AD" | bcftools call -G - -Ov -mv -f GQ,GP --samples-file {sampfile} > initial.vcf
+bcftools filter -i 'FORMAT/DP>=5 & MQ>=20 & FORMAT/GQ >=20 & AC >=5 & F_MISSING <0.25 & MAF>=0.01' initial.vcf > final.vcf
 bgzip -f final.vcf
 ```
 
 Call SNPs and INDELs across individuals using samtools/bcftools. Once started, the pipeline will carry on through SNP filtering, automatically sbatching jobs when appropriate. If applied on startup, user will receive an email when pipeline is finished. Various ways to customize available, see help and usage below.
 
-I HAVE NOT UPDATED ANYTHING BELOW HERE TO REFLECT THE BCFTOOLS PIPELINE
+I HAVE NOT UPDATED ANYTHING BELOW HERE TO REFLECT THE BCFTOOLS PIPELINE (except help menu)
 
 ---
 ## Pipeline workflow
@@ -119,53 +119,7 @@ optional arguments:
                         ['all', 'fail', 'begin', 'end', 'pipeline-finish']
                         (default: None)
   -maf MAF              At the end of the pipeline, VCF files will be filtered
-                        for MAF. If the pipeline is run on a single
-                        population/pool, the user can set MAF to 0.0 so as to
-                        filter variants based on global allele frequency
-                        across populations/pools at a later time. (if the
-                        number of sample_names in a pool == 1 then default
-                        maf=0; Otherwise maf = 1/sum(ploidy column)
-  --translate           Boolean: true if used, false otherwise. If a stitched
-                        genome is used for mapping, this option will look for
-                        a ref.order file in the same directory as the
-                        ref.fasta - where ref is the basename of the ref.fasta
-                        (without the .fasta). The pipeline will use this
-                        .order file to translate mapped positions to
-                        unstitched positions at the end of the pipeline while
-                        filtering. Positions in .order file are assumed to be
-                        1-based indexing. Assumes .order file has no header,
-                        and is of the format (contig name from unstitched
-                        genome, start/stop are positions in the stitched genome):
-                        ref_scaffold<tab>contig_name<tab>start_pos<tab>stop_pos<tab>contig_length
-                        (default: False)
-  --rm_repeats          Boolean: true if used, false otherwise. If repeat
-                        regions are available, remove SNPs that fall within
-                        these regions from final SNP table and write to
-                        a REPEATS table. This option will look for a .txt file
-                        in the same directory as the ref.fasta. Assumes the
-                        filename is of the form: ref_repeats.txt - where ref
-                        is the basename of the ref.fasta (without the .fasta).
-                        This file should have 1-based indexing and should be
-                        located in the same directory as the reference. The
-                        file should have a header ('CHROM', 'start', 'stop').
-                        The CHROM column can be names in the reference (if
-                        using unstitched reference), or names of contigs that
-                        were stitched to form the reference. If using a
-                        stitched genome, --translate is required. (default:
-                        False)
-  --rm_paralogs         Boolean: true if used, false otherwise. If candidate
-                        sites have been isolated within the reference where
-                        distinct gene copies (paralogs) map to the same
-                        position (and thus create erroneous SNPs), remove any
-                        SNPs that fall on these exact sites and write to a
-                        PARALOGS file. The pipeline assumes this file is
-                        located in the parentdir, andends with
-                        '_paralog_snps.txt'. This file is tab-delimited, and
-                        must have a column called 'locus' thatcontains
-                        hyphen-separated CHROM-POS sites for paralogs.
-                        These sites should be found in the current ref.fa
-                        being used to call SNPs (otherwise SNPs cannot be
-                        filtered by these sites). (default: False)
+                        for MAF. default MAF is set to 0.0
   -h, --help            Show this help message and exit.
 
 ```

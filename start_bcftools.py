@@ -129,11 +129,17 @@ def get_bamfiles(samps, pooldir):
     """
     print('getting bamfiles')
     found = fs(op.join(pooldir, '04_realign'))
-    files = dict((samp, f.replace(".bai", ".bam")) for samp in samps for f in found if samp in f and f.endswith('.bai'))
+    files = dict((samp, f.replace(".bai", ".bam"))
+                 for samp in samps
+                 for f in found
+#                  if samp in f 
+                 if op.basename(f).startswith("%s_" % samp)
+                 and f.endswith('.bai'))
     if not len(files) == len(samps):
         print('len(files) != len(samps)')
         print('files = ', files)
-        print('samps = ', samps)
+        print('\nsamps = ', samps)
+        print('\nfound = ', found)
         exit()
     return files
 
@@ -218,11 +224,19 @@ def get_small_bam_cmds(bamfiles, bednum, bedfile):
 def get_bcftools_cmd(bamfiles, bedfile, bednum, vcf, ref, pooldir, program):
     smallbams, smallcmds = get_small_bam_cmds(bamfiles, bednum, bedfile)
     smallbams = ' '.join(smallbams)
+    sampfile = op.join(pooldir, 'samples_file.txt')
+    # determine MAF
+    mafpkl = op.join(op.dirname(pooldir), 'maf.pkl')
+    if op.exists(mafpkl):
+        maf = float(pklload(mafpkl))
+    else:
+        maf = 0.0
+        
     cmd = f'''module unload samtools/1.9
 
-/home/lindb/src/bcftools-1.11/bcftools mpileup --min-MQ 30 --min-BQ 20 -B -f {ref} {smallbams} -a "DP,AD" | \
-/home/lindb/src/bcftools-1.11/bcftools call -G - -Ov -mv -f GQ,GP > $SLURM_TMPDIR/{op.basename(vcf)}
-/home/lindb/src/bcftools-1.11/bcftools filter -i 'FORMAT/DP>=5 & MQ>=30 & FORMAT/GQ >=20 & AC >=5 & F_MISSING <0.25' $SLURM_TMPDIR/{op.basename(vcf)} > {vcf}
+/home/lindb/src/bcftools-1.11/bcftools mpileup --min-MQ 20 --min-BQ 20 -B -f {ref} {smallbams} -a "DP,AD" | \
+/home/lindb/src/bcftools-1.11/bcftools call -G - -Ov -mv -f GQ,GP --samples-file {sampfile} > $SLURM_TMPDIR/{op.basename(vcf)}
+/home/lindb/src/bcftools-1.11/bcftools filter -i 'FORMAT/DP>=5 & MQ>=20 & FORMAT/GQ >=20 & AC >=5 & F_MISSING <0.25 & MAF>={maf}' $SLURM_TMPDIR/{op.basename(vcf)} > {vcf}
 '''
     # final vcf
     outdir = makedir(op.join(pooldir, program))
@@ -334,7 +348,7 @@ def create_sh(bamfiles, shdir, pool, pooldir, program, parentdir):
     for bedfile in bedfiles:
 #         file = make_sh(bamfiles, bedfile, shdir, pool, pooldir, program, parentdir)
         file,finalvcf = make_adaptree_sh(bamfiles, bedfile, shdir, pool, pooldir, program, parentdir)
-        #pids.append(sbatch(file))
+        pids.append(sbatch(file))
         finalvcfs.append(finalvcf + '.gz')
     return pids, finalvcfs
 
@@ -349,8 +363,9 @@ def create_combine(pids, parentdir, pool, program, shdir, finalvcfs):
     pooldir = op.join(parentdir, pool)
     email_text = get_email_info(parentdir, 'final')
     catout = op.join(op.dirname(finalvcfs[0]), f'{pool}-{program}_all_bedfiles.vcf.gz')
-    dependencies = '#SBATCH --dependency=afterok:' + ','.join(pids)
+    dependencies = "#SBATCH --dependency=afterok:" + ",".join(pids)
     bash_variables = op.join(parentdir, 'bash_variables')
+    joined = " ".join(finalvcfs)
     text = f'''#!/bin/bash
 #SBATCH --job-name={pool}-combine-{program}
 #SBATCH --time=12:00:00
@@ -368,13 +383,13 @@ def create_combine(pids, parentdir, pool, program, shdir, finalvcfs):
 # python $HOME/pipeline/combine_varscan.py {pooldir} {program} {pool}
 
 
-/home/lindb/src/bcftools-1.11/bcftools concat {' '.join(finalvcfs)} -O z -o {catout} --threads 48
-
+/home/lindb/src/bcftools-1.11/bcftools concat {joined} -O z -o {catout} --threads 48
+    
 '''
     combfile = op.join(shdir, f'{pool}-combine-{program}.sh')
     with open(combfile, 'w') as o:
         o.write("%s" % text)
-    # sbatch(combfile)
+    sbatch(combfile)
     print(f'sbatched {program} combinefile with dependencies: ' + ','.join(pids))
 
 

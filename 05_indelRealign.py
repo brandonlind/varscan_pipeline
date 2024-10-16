@@ -28,8 +28,8 @@ bash_variables = op.join(parentdir, 'bash_variables')
 
 email_text = get_email_info(parentdir, '05')
 text = f'''#!/bin/bash
-#SBATCH --time=7-00:00:00
-#SBATCH --mem=8000M
+#SBATCH --time=12:00:00
+#SBATCH --mem=4000M
 #SBATCH --ntasks=1
 #SBATCH --job-name={pool}-{samp}-indelRealign
 #SBATCH --output={pool}-{samp}-indelRealign_%j.out 

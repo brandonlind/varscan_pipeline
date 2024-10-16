@@ -136,7 +136,23 @@ def make_pooldirs(data, parentdir):
     return pooldirs
 
 
-def create_all_bedfiles(poolref, numpools):
+def create_samples_file(data, parentdir):
+    """Create samples file for bcftools --samples-file flag to incorporate ploidy information."""
+    print(Bcolors.BOLD + "\ncreating samples file for bcftools --samples-file flag ..." + Bcolors.ENDC)
+    for pool in uni(data['pool_name']):
+        pooldir = op.join(parentdir, pool)
+        pooldata = data[data['pool_name']==pool]
+        sample_data = []
+        for row in pooldata.index:
+            samp,ploidy = pooldata.loc[row, ['rgsm', 'ploidy']]
+            sample_data.append('%s\t%s' % (samp, ploidy))
+        samples_file = op.join(pooldir, 'samples_file.txt')
+        with open(samples_file, 'w') as o:
+            o.write("%s" % '\n'.join(sample_data))
+        print('\t', samples_file)
+
+
+def create_all_bedfiles(poolref, numpools, num_beds):
     """For each unique ref.fa in datatable.txt, create bedfiles for varscan.
 
     Positional arguments:
@@ -145,7 +161,7 @@ def create_all_bedfiles(poolref, numpools):
     # create bedfiles for varscan
     print(Bcolors.BOLD + "\ncreating bedfiles" + Bcolors.ENDC)
     for ref in uni(poolref.values()):
-        create_bedfiles.main(ref, numpools)
+        create_bedfiles.main(ref, numpools, totaljobs=num_beds)
 
 def choose_file(files, pool, purpose, keep=None):
     """Choose which repeat/paralog file to use if multiple exist."""
@@ -344,7 +360,7 @@ def handle_rg_fails(failing, warning, parentdir, data):
         askforinput(tab='\t', newline='')
 
 
-def parse_datatable(data, parentdir, translate, repeats, paralogs):
+def parse_datatable(data, parentdir):
     """
     Checks some assumptions of datatable.txt, create files and dirs for downstream.
 
@@ -461,19 +477,19 @@ different pool assignments: %s' % samp + Bcolors.ENDC)
             f2pool[f] = pool
             f2samp[op.join(pooldir, f)] = samp
 
-    # handle --rm_paralogs, --translate, --rm_repeats
-    for pool in uni(data['pool_name']):
-        # handle translating stitched genome to unstitched positions
-        pool2translate[pool] = handle_translate(translate, pool2translate, poolref[pool], data, pool)
+#     # handle --rm_paralogs, --translate, --rm_repeats
+#     for pool in uni(data['pool_name']):
+#         # handle translating stitched genome to unstitched positions
+#         pool2translate[pool] = handle_translate(translate, pool2translate, poolref[pool], data, pool)
 
-        # handle removing SNPs from repeat regions
-        pool2repeatsfile[pool] = handle_repeats(repeats, pool2repeatsfile, poolref[pool], data, pool)
+#         # handle removing SNPs from repeat regions
+#         pool2repeatsfile[pool] = handle_repeats(repeats, pool2repeatsfile, poolref[pool], data, pool)
 
-        # handle removing paralogs
-        pool2paralogfile[pool] = handle_paralogs(paralogs, pool2paralogfile, data, pool, parentdir)
+#         # handle removing paralogs
+#         pool2paralogfile[pool] = handle_paralogs(paralogs, pool2paralogfile, data, pool, parentdir)
 
-    # handle fails for rm_repeats/translate/rm_paralogs
-    handle_dict_fails(pool2repeatsfile, pool2translate, pool2paralogfile, repeats, translate, paralogs, data, parentdir)
+#     # handle fails for rm_repeats/translate/rm_paralogs
+#     handle_dict_fails(pool2repeatsfile, pool2translate, pool2paralogfile, repeats, translate, paralogs, data, parentdir)
 
     # RG info failing/warnings
     handle_rg_fails(failing, warning, parentdir, data)
@@ -495,7 +511,8 @@ def check_reqs(parentdir):
     """Check for assumed exports."""
     print(Bcolors.BOLD + '\nChecking for exported variables' + Bcolors.ENDC)
     variables = ['SLURM_ACCOUNT', 'SBATCH_ACCOUNT', 'SALLOC_ACCOUNT',
-                 'VARSCAN_DIR', 'PYTHONPATH', 'SQUEUE_FORMAT']
+#                  'VARSCAN_DIR', 'PYTHONPATH', 'SQUEUE_FORMAT']
+                 'PYTHONPATH', 'SQUEUE_FORMAT']
 
     # check to see if bash_variables file has been created
     if not op.exists(op.join(parentdir, 'bash_variables')):
@@ -521,6 +538,7 @@ in variables from README (eg SLURM_ACCOUNT, SQUEUE_FORMAT, etc). See example in 
             for var in needed:
                 print(Bcolors.FAIL + '\t%s' % var + Bcolors.ENDC)
             print('exiting pipeline')
+            exit()
 
     # check to see if bash_variables file has been sourced
     for var in variables:
@@ -603,59 +621,11 @@ filter variants based on global allele frequency
 across populations/pools at a later time. (if the
 number of sample_names in a pool == 1 then default
 maf=0; Otherwise default maf = 1/sum(ploidy column)''')
-    parser.add_argument('--translate',
+    parser.add_argument('--num_beds',
                         required=False,
-                        action='store_true',
-                        dest="translate",
-                        help='''Boolean: true if used, false otherwise. If a stitched
-genome is used for mapping, this option will look for
-a ref.order file in the same directory as the
-ref.fasta - where ref is the basename of the ref.fasta
-(without the .fasta). The pipeline will use this
-.order file to translate mapped positions to
-unstitched positions at the end of the pipeline while
-filtering. Positions in .order file are assumed to be
-1-based indexing. Assumes .order file has no header,
-and is of the format (contig name from unstitched
-genome, start/stop are positions in the stitched genome):
-ref_scaffold<tab>contig_name<tab>start_pos<tab>stop_pos<tab>contig_length
-(default: False)''')
-    parser.add_argument('--rm_repeats',
-                        required=False,
-                        action='store_true',
-                        dest='repeats',
-                        help='''Boolean: true if used, false otherwise. If repeat
-regions are available, remove SNPs that fall within
-these regions from final SNP table and write to 
-a REPEATS table. This option will look for a .txt file
-in the same directory as the ref.fasta. Assumes the
-filename is of the form: ref_repeats.txt - where ref
-is the basename of the ref.fasta (without the .fasta).
-This file should have 1-based indexing and should be
-located in the same directory as the reference. The
-file should have a header ('CHROM', 'start', 'stop').
-The CHROM column can be names in the reference (if
-using unstitched reference), or names of contigs that
-were stitched to form the reference. If using a
-stitched genome, --translate is required. (default:
-False)''')
-    parser.add_argument('--rm_paralogs',
-                        required=False,
-                        action='store_true',
-                        dest='paralogs',
-                        help='''Boolean: true if used, false otherwise. If candidate
-sites have been isolated within the reference where
-distinct gene copies (paralogs) map to the same
-position (and thus create erroneous SNPs), remove any
-SNPs that fall on these exact sites and write to a
-PARALOGS file. The pipeline assumes this file is
-located in the parentdir, andends with 
-'_paralog_snps.txt'. This file is tab-delimited, and
-must have a column called 'locus' thatcontains
-hyphen-separated CHROM-POS sites for paralogs. These
-sites should be found in the current ref.fa being
-used to call SNPs (otherwise SNPs cannot be filtered
-by these sites). (default: False)''')
+                        default=500,
+                        dest='num_beds',
+                        help='''The number of bedfiles to create to parallelize SNP calling. (default: 500)''')
     parser.add_argument('-h', '--help',
                         action='help',
                         default=argparse.SUPPRESS,
@@ -700,18 +670,6 @@ please check input\n' + Bcolors.ENDC)
     if args.maf:
         pkldump(args.maf, op.join(args.parentdir, 'maf.pkl'))
 
-    if args.repeats:
-        text = 'WARN: You have indicated that you want to remove repeats.\n'
-        text = text + 'WARN: Make sure --translate is used if using a stitched reference.\n'
-        text = text + 'WARN: Otherwise this will cause an error.\n'
-        text = text + 'WARN: --repeats assumes that the first column in the repeats file ...\n'
-        text = text + 'WARN: ... are the exact chromosome names found in the ref.fasta, ...\n'
-        text = text + 'WARN: ... or if used with --translate this assumes that the first ...\n'
-        text = text + 'WARN: ... column of the repeats file are names found in the second ...\n'
-        text = text + 'WARN: ... column of the ref.order file used to translate positions.'
-        print(Bcolors.WARNING + text + Bcolors.ENDC)
-        askforinput()
-
     return args
 
 
@@ -737,15 +695,15 @@ def main():
     # create directories for each group of pools to be combined
     pooldirs = make_pooldirs(data, args.parentdir)
     
+    # create --samples-file for bcftools
+    create_samples_file(data, args.parentdir)
+    
     # parse the datatable
     f2pool, poolref = parse_datatable(data,
-                                      args.parentdir,
-                                      args.translate,
-                                      args.repeats,
-                                      args.paralogs)
+                                      args.parentdir)
 
     # create bedfiles to parallelize varscan later on
-    create_all_bedfiles(poolref, len(pooldirs))
+    create_all_bedfiles(poolref, len(pooldirs), args.num_beds)
 
     # assign fq files to pooldirs for visualization (good to double check)
     get_datafiles(args.parentdir, f2pool, data)
