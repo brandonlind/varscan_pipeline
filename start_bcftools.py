@@ -236,7 +236,7 @@ def get_bcftools_cmd(bamfiles, bedfile, bednum, vcf, ref, pooldir, program):
 
 /home/lindb/src/bcftools-1.11/bcftools mpileup --min-MQ 20 --min-BQ 20 -B -f {ref} {smallbams} -a "DP,AD" | \
 /home/lindb/src/bcftools-1.11/bcftools call -G - -Ov -mv -f GQ,GP --samples-file {sampfile} > $SLURM_TMPDIR/{op.basename(vcf)}
-/home/lindb/src/bcftools-1.11/bcftools filter -i 'FORMAT/DP>=5 && MQ>=20 && FORMAT/GQ >=20 && AC >=5 && F_MISSING < 0.75 && MAF>={maf}' $SLURM_TMPDIR/{op.basename(vcf)} > {vcf}
+/home/lindb/src/bcftools-1.11/bcftools filter -e 'FORMAT/DP < 5 || FORMAT/GQ < 20 || MQ < 20 || AC < 5 || F_MISSING >= 0.75 || MAF <= 0' -S . $SLURM_TMPDIR/{op.basename(vcf)} > {vcf}
 '''
     # final vcf
     outdir = makedir(op.join(pooldir, program))
