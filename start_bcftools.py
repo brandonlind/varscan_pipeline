@@ -235,10 +235,11 @@ def get_bcftools_cmd(bamfiles, bedfile, bednum, vcf, ref, pooldir, program):
     masked_vcf = op.basename(vcf).replace('.vcf', '_masked.vcf')
     cmd = f'''module unload samtools/1.9
 
+export BCFTOOLS_PLUGINS='/home/lindb/src/bcftools-1.11/plugins'
 /home/lindb/src/bcftools-1.11/bcftools mpileup --min-MQ 20 --min-BQ 20 -B -f {ref} {smallbams} -a "DP,AD" | \
 /home/lindb/src/bcftools-1.11/bcftools call -G - -Ov -mv -f GQ,GP --samples-file {sampfile} > $SLURM_TMPDIR/{op.basename(vcf)}
-/home/lindb/src/bcftools-1.11/bcftools +setGT $SLURM_TMPDIR/{op.basename(vcf)} -- -t 'FORMAT/DP<5 | FORMAT/GQ<20' -n . -o $SLURM_TMPDIR/{masked_vcf}
-/home/lindb/src/bcftools-1.11/bcftools filter -e 'F_MISSING > 0.20 || MAF <= 0' -S . $SLURM_TMPDIR/{masked_vcf} > {vcf}
+/home/lindb/src/bcftools-1.11/bcftools +setGT $SLURM_TMPDIR/{op.basename(vcf)} -o $SLURM_TMPDIR/{masked_vcf} -- -t q -i 'FORMAT/DP<5 || FORMAT/GQ<20' -n .
+/home/lindb/src/bcftools-1.11/bcftools filter -e 'F_MISSING > 0.20 || MAF <= 0' $SLURM_TMPDIR/{masked_vcf} > {vcf}
 '''
     # final vcf
     outdir = makedir(op.join(pooldir, program))
