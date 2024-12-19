@@ -202,6 +202,7 @@ def get_small_bam_cmds(bamfiles, bednum, bedfile):
         cmds.append(cmd)
         smallbams.append(smallbam)
 
+    pool = op.basename(bam).split('_')[0]
     cmd_dir = makedir(f'{parentdir}/{pool}/cmd_files')
     cmd_file = f'{cmd_dir}/{bednum}_view_cmds.sh'
     with open(cmd_file, 'w') as o:
@@ -250,7 +251,10 @@ def make_adaptree_sh(bamfiles, bedfile, shdir, pool, pooldir, program, parentdir
     bednum, ref, vcf = get_prereqs(bedfile, parentdir, pool, program)
     
     cmd, finalvcf = get_bcftools_cmd(bamfiles, bedfile, bednum, vcf, ref, pooldir, program)
-    
+
+    outtable = finalvcf.replace('.vcf.gz', '.txt')
+    filt_outdir = op.dirname(finalvcf)
+
     bash_variables = op.join(parentdir, 'bash_variables')
     text = f'''#!/bin/bash
 #SBATCH --ntasks=1
@@ -268,6 +272,17 @@ module load StdEnv/2018.3
 module load nixpkgs/16.09  gcc/7.3.0 htslib/1.9
 cd $(dirname {finalvcf})
 bgzip -f {finalvcf} --threads {threads}
+
+# index and convert to table
+gatk/4.4.0.0
+gatk IndexFeatureFile --feature-file {finalvcf}.gz
+gatk VariantsToTable --variant {finalvcf}.gz -F CHROM -F POS -F REF -F ALT -F AF -F QUAL -F TYPE -F FILTER -F ADP -F WT -F HET -F HOM -F NC \
+-GF GT -GF GQ -GF SDP -GF DP -GF PL -GF PVAL -GF AD -GF RD \
+-O {outtable}
+module unload gatk/4.4.0.0
+
+source $HOME/activate_py3124.sh
+python filter_bcftools.py {outtable} {filt_outdir} {threads}
 
 # if any other bcftools jobs are hanging due to priority, change the account
 source {bash_variables}
