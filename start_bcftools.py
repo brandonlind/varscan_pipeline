@@ -229,7 +229,7 @@ def get_bcftools_cmd(bamfiles, bedfile, bednum, vcf, ref, pooldir, program):
     
     cmd = f'''module load parallel
 module load samtools/1.9
-cat {cmd_file} | parall -j {threads} --progress --eta
+cat {cmd_file} | parallel -j {threads} --progress --eta
 module unload samtools/1.9
 
 export BCFTOOLS_PLUGINS='/home/lindb/src/bcftools-1.11/plugins'
