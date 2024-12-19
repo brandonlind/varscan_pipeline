@@ -202,7 +202,8 @@ def get_small_bam_cmds(bamfiles, bednum, bedfile):
         cmds.append(cmd)
         smallbams.append(smallbam)
 
-    cmd_file = f'%s/view_cmds.sh' % os.environ['SLURM_TMPDIR']
+    cmd_dir = makedir(f'{parentdir}/{pool}/cmd_files')
+    cmd_file = f'{cmd_dir}/{bednum}_view_cmds.sh'
     with open(cmd_file, 'w') as o:
         o.write('\n'.join(cmds))
                 
@@ -239,8 +240,9 @@ export BCFTOOLS_PLUGINS='/home/lindb/src/bcftools-1.11/plugins'
     # final vcf
     outdir = makedir(op.join(pooldir, program))
     finalvcf = op.join(outdir, op.basename(vcf))  # TODO: I think this is redundant, leaving since it's worked before
-    cmds = smallcmds + cmd
-    return (cmds, finalvcf)
+    #cmds = smallcmds + cmd
+    #return (cmds, finalvcf)
+    return (cmd, finalvcf)
 
 
 def make_adaptree_sh(bamfiles, bedfile, shdir, pool, pooldir, program, parentdir):
