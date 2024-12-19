@@ -191,38 +191,28 @@ def get_prereqs(bedfile, parentdir, pool, program):
 def get_small_bam_cmds(bamfiles, bednum, bedfile):
     """Get samtools commands to reduce a bamfile to intervals in the bedfile."""
     smallbams = []
-    cmds = '''module load java\nmodule load samtools/1.9\n'''
+    #cmds = '''module load java\nmodule load samtools/1.9\n'''
+    cmds = []
     for bam in bamfiles:
         pool = op.basename(bam).split("_realigned")[0]
         smallbam = f'$SLURM_TMPDIR/{pool}_realigned_{bednum}.bam'
-        cmd = f'''samtools view -b -L {bedfile} {bam} > {smallbam}\n'''
-        cmds = cmds + cmd
+        cmd = f'''samtools view -b -L {bedfile} {bam} > {smallbam}'''
+        # cmd = f'''samtools view -b -L {bedfile} {bam} > {smallbam}\n'''
+        # cmds = cmds + cmd
+        cmds.append(cmd)
         smallbams.append(smallbam)
-    return (smallbams, cmds)
 
-
-# def get_varscan_cmd(bamfiles, bedfile, bednum, vcf, ref, pooldir, program):
-#     """Create command to call varscan."""
-#     smallbams, smallcmds = get_small_bam_cmds(bamfiles, bednum, bedfile)
-#     smallbams = ' '.join(smallbams)
-#     ploidy = pklload(op.join(parentdir, 'ploidy.pkl'))[pool]
-#     # if single-sample then set minfreq to 0, else use min possible allele freq
-#     minfreq = 1/sum(ploidy.values()) if len(ploidy.keys()) > 1 else 0
-#     cmd = f'''samtools mpileup -B -f {ref} {smallbams} | java -Xmx15g -jar \
-# $VARSCAN_DIR/VarScan.v2.4.3.jar mpileup2cns --min-coverage 8 --p-value 0.05 \
-# --min-var-freq {minfreq} --strand-filter 1 --min-freq-for-hom 0.80 \
-# --min-avg-qual 20 --output-vcf 1 > {vcf}
-# module unload samtools
-# '''
-#     # final vcf
-#     outdir = makedir(op.join(pooldir, program))
-#     finalvcf = op.join(outdir, op.basename(vcf))
-#     cmds = smallcmds + cmd
-#     return (cmds, finalvcf)
+    cmd_file = f'%s/view_cmds.sh' % os.environ['SLURM_TMPDIR']
+    with open(cmd_file, 'w') as o:
+        o.write('\n'.join(cmds)
+                
+    # return (smallbams, cmds)
+    return (smallbams, cmd_file)
 
 
 def get_bcftools_cmd(bamfiles, bedfile, bednum, vcf, ref, pooldir, program):
-    smallbams, smallcmds = get_small_bam_cmds(bamfiles, bednum, bedfile)
+    # smallbams, smallcmds = get_small_bam_cmds(bamfiles, bednum, bedfile)
+    smallbams, cmd_file = get_small_bam_cmds(bamfiles, bednum, bedfile)
     smallbams = ' '.join(smallbams)
     sampfile = op.join(pooldir, 'samples_file.txt')
     # determine MAF
@@ -232,64 +222,25 @@ def get_bcftools_cmd(bamfiles, bedfile, bednum, vcf, ref, pooldir, program):
     else:
         maf = 0.0
 
-    masked_vcf = op.basename(vcf).replace('.vcf', '_masked.vcf')
-    cmd = f'''module unload samtools/1.9
+    #masked_vcf = op.basename(vcf).replace('.vcf', '_masked.vcf')
+    #/home/lindb/src/bcftools-1.11/bcftools +setGT $SLURM_TMPDIR/{op.basename(vcf)} -o $SLURM_TMPDIR/{masked_vcf} -- -t q -i 'FORMAT/DP<5 || FORMAT/GQ<20' -n .
+    #/home/lindb/src/bcftools-1.11/bcftools filter -e 'F_MISSING > 0.20 || MAF <= 0' $SLURM_TMPDIR/{masked_vcf} > {vcf}
+    
+    cmd = f'''module load parallel
+module load samtools/1.9
+cat {cmd_file} | parall -j {threads} --progress --eta
+module unload samtools/1.9
 
 export BCFTOOLS_PLUGINS='/home/lindb/src/bcftools-1.11/plugins'
 /home/lindb/src/bcftools-1.11/bcftools mpileup --min-MQ 20 --min-BQ 20 -B -f {ref} {smallbams} -a "DP,AD" | \
 /home/lindb/src/bcftools-1.11/bcftools call -G - -Ov -mv -f GQ,GP --samples-file {sampfile} > $SLURM_TMPDIR/{op.basename(vcf)}
-/home/lindb/src/bcftools-1.11/bcftools +setGT $SLURM_TMPDIR/{op.basename(vcf)} -o $SLURM_TMPDIR/{masked_vcf} -- -t q -i 'FORMAT/DP<5 || FORMAT/GQ<20' -n .
-/home/lindb/src/bcftools-1.11/bcftools filter -e 'F_MISSING > 0.20 || MAF <= 0' $SLURM_TMPDIR/{masked_vcf} > {vcf}
+/home/lindb/src/bcftools-1.11/bcftools filter -e 'F_MISSING > 0.40 || MAF <= 0' $SLURM_TMPDIR/{op.basename(vcf)} > {vcf}
 '''
     # final vcf
     outdir = makedir(op.join(pooldir, program))
     finalvcf = op.join(outdir, op.basename(vcf))  # TODO: I think this is redundant, leaving since it's worked before
     cmds = smallcmds + cmd
     return (cmds, finalvcf)
-        
-
-# def make_sh(bamfiles, bedfile, shdir, pool, pooldir, program, parentdir):
-#     """Create sh file for varscan command."""
-
-#     num, ref, vcf = get_prereqs(bedfile, parentdir, pool, program)
-
-#     cmd, finalvcf = get_varscan_cmd(bamfiles, bedfile, num,
-#                                     vcf, ref, pooldir, program)
-#     fields = '''-F ADP -F WT -F HET -F HOM -F NC -GF GT -GF GQ -GF SDP -GF DP \
-# -GF FREQ -GF PVAL -GF AD -GF RD'''
-
-#     tablefile = finalvcf.replace(".vcf", "_table.txt")
-#     bash_variables = op.join(parentdir, 'bash_variables')
-#     text = f'''#!/bin/bash
-# #SBATCH --ntasks=1
-# #SBATCH --job-name={pool}-{program}_bedfile_{num}
-# #SBATCH --time='7-00:00:00'
-# #SBATCH --mem=2000M
-# #SBATCH --output={pool}-{program}_bedfile_{num}_%j.out
-
-# # run VarScan (v.2.4.2)
-# {cmd}
-
-# # vcf -> table (multiallelic to multiple lines, filtered in combine_varscan.py
-# module load gatk/4.1.0.0
-# gatk VariantsToTable --variant {finalvcf} -F CHROM -F POS -F REF -F ALT -F AF -F QUAL \
-# -F TYPE -F FILTER {fields} -O {tablefile} --split-multi-allelic
-# module unload gatk
-
-# # gzip outfiles to save space
-# module load nixpkgs/16.09  gcc/7.3.0 htslib/1.9
-# cd $(dirname {finalvcf})
-# bgzip -f {finalvcf}
-
-# # if any other varscan jobs are hanging due to priority, change the account
-# source {bash_variables}
-# python $HOME/pipeline/balance_queue.py {program} {parentdir}
-
-# '''
-#     file = op.join(shdir, f'{pool}-{program}_bedfile_{num}.sh')
-#     with open(file, 'w') as o:
-#         o.write("%s" % text)
-#     return file
 
 
 def make_adaptree_sh(bamfiles, bedfile, shdir, pool, pooldir, program, parentdir):
@@ -301,9 +252,10 @@ def make_adaptree_sh(bamfiles, bedfile, shdir, pool, pooldir, program, parentdir
     bash_variables = op.join(parentdir, 'bash_variables')
     text = f'''#!/bin/bash
 #SBATCH --ntasks=1
+#SBATCH --cpus-per-task={threads}
 #SBATCH --job-name={pool}-{program}_bedfile_{bednum}
-#SBATCH --time='7-00:00:00'
-#SBATCH --mem=2000M
+#SBATCH --time='1-00:00:00'
+#SBATCH --mem=4000M
 #SBATCH --output={pool}-{program}_bedfile_{bednum}_%j.out
 
 # run bcftools (v1.11), filter
@@ -313,7 +265,7 @@ module load StdEnv/2018.3
 # gzip outfiles to save space
 module load nixpkgs/16.09  gcc/7.3.0 htslib/1.9
 cd $(dirname {finalvcf})
-bgzip -f {finalvcf}
+bgzip -f {finalvcf} --threads {threads}
 
 # if any other bcftools jobs are hanging due to priority, change the account
 source {bash_variables}
@@ -324,8 +276,6 @@ python $HOME/pipeline/balance_queue.py {program} {parentdir}
     with open(file, 'w') as o:
         o.write("%s" % text)
     return file, finalvcf
-    
-
 
 def sbatch(file):
     """Sbatch file."""
@@ -342,7 +292,6 @@ def get_bedfiles(parentdir, pool):
     beddir = op.join(op.dirname(ref), 'bedfiles_%s' % op.basename(ref).split(".fa")[0])
     return [f for f in fs(beddir) if f.endswith('.bed')]
 
-
 def create_sh(bamfiles, shdir, pool, pooldir, program, parentdir):
     """Create and sbatch shfiles, record pid to use as dependency for combine job."""
     bedfiles = get_bedfiles(parentdir, pool)
@@ -354,7 +303,6 @@ def create_sh(bamfiles, shdir, pool, pooldir, program, parentdir):
         pids.append(sbatch(file))
         finalvcfs.append(finalvcf + '.gz')
     return pids, finalvcfs
-
 
 def create_combine(pids, parentdir, pool, program, shdir, finalvcfs):
     """Create command file to combine bcftools jobs once they're finished.
@@ -375,7 +323,7 @@ def create_combine(pids, parentdir, pool, program, shdir, finalvcfs):
 #SBATCH --mem=20000M
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=48
+#SBATCH --cpus-per-task={threads}
 #SBATCH --output={pool}-combine-{program}_%j.out
 {dependencies}
 {email_text}
@@ -386,7 +334,7 @@ def create_combine(pids, parentdir, pool, program, shdir, finalvcfs):
 # python $HOME/pipeline/combine_varscan.py {pooldir} {program} {pool}
 
 
-/home/lindb/src/bcftools-1.11/bcftools concat {joined} -O z -o {catout} --threads 48
+/home/lindb/src/bcftools-1.11/bcftools concat {joined} -O z -o {catout} --threads {threads}
     
 '''
     combfile = op.join(shdir, f'{pool}-combine-{program}.sh')
@@ -395,6 +343,7 @@ def create_combine(pids, parentdir, pool, program, shdir, finalvcfs):
     sbatch(combfile)
     print(f'sbatched {program} combinefile with dependencies: ' + ','.join(pids))
 
+    pass
 
 def main(parentdir, pool):
     """Start <program> if it's appropriate to do so."""
@@ -423,5 +372,7 @@ def main(parentdir, pool):
 if __name__ == "__main__":
     # args
     thisfile, parentdir, pool = sys.argv
+
+    threads = 48
 
     main(parentdir, pool)
