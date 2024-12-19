@@ -204,7 +204,7 @@ def get_small_bam_cmds(bamfiles, bednum, bedfile):
 
     cmd_file = f'%s/view_cmds.sh' % os.environ['SLURM_TMPDIR']
     with open(cmd_file, 'w') as o:
-        o.write('\n'.join(cmds)
+        o.write('\n'.join(cmds))
                 
     # return (smallbams, cmds)
     return (smallbams, cmd_file)
