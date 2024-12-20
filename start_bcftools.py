@@ -211,7 +211,7 @@ def get_small_bam_cmds(bamfiles, bednum, bedfile):
     # return (smallbams, cmds)
     return (smallbams, cmd_file)
 
-
+# export BCFTOOLS_PLUGINS='/home/lindb/src/bcftools-1.11/plugins'
 def get_bcftools_cmd(bamfiles, bedfile, bednum, vcf, ref, pooldir, program):
     # smallbams, smallcmds = get_small_bam_cmds(bamfiles, bednum, bedfile)
     smallbams, cmd_file = get_small_bam_cmds(bamfiles, bednum, bedfile)
@@ -233,7 +233,6 @@ module load samtools/1.9
 cat {cmd_file} | parallel -j {threads} --progress --eta
 module unload samtools/1.9
 
-export BCFTOOLS_PLUGINS='/home/lindb/src/bcftools-1.11/plugins'
 /home/lindb/src/bcftools-1.11/bcftools mpileup --min-MQ 20 --min-BQ 20 -B -f {ref} {smallbams} -a "DP,AD" | \
 /home/lindb/src/bcftools-1.11/bcftools call -G - -Ov -mv -f GQ,GP --samples-file {sampfile} > $SLURM_TMPDIR/{op.basename(vcf)}
 /home/lindb/src/bcftools-1.11/bcftools filter -e 'F_MISSING > 0.40 || MAF <= 0' $SLURM_TMPDIR/{op.basename(vcf)} > {vcf}
@@ -241,8 +240,7 @@ export BCFTOOLS_PLUGINS='/home/lindb/src/bcftools-1.11/plugins'
     # final vcf
     outdir = makedir(op.join(pooldir, program))
     finalvcf = op.join(outdir, op.basename(vcf))  # TODO: I think this is redundant, leaving since it's worked before
-    #cmds = smallcmds + cmd
-    #return (cmds, finalvcf)
+
     return (cmd, finalvcf)
 
 
@@ -274,15 +272,17 @@ cd $(dirname {finalvcf})
 bgzip -f {finalvcf} --threads {threads}
 
 # index and convert to table
-gatk/4.4.0.0
-gatk IndexFeatureFile --feature-file {finalvcf}.gz
+module load StdEnv/2023
+module load gatk/4.4.0.0
+gatk IndexFeatureFile --input {finalvcf}.gz
 gatk VariantsToTable --variant {finalvcf}.gz -F CHROM -F POS -F REF -F ALT -F AF -F QUAL -F TYPE -F FILTER -F ADP -F WT -F HET -F HOM -F NC \
 -GF GT -GF GQ -GF SDP -GF DP -GF PL -GF PVAL -GF AD -GF RD \
 -O {outtable}
 module unload gatk/4.4.0.0
 
+# mask genotypes with low quality or depth, filter loci for <=40% missing data
 source $HOME/activate_py3124.sh
-python filter_bcftools.py {outtable} {filt_outdir} {threads}
+python $HOME/pipeline/filter_bcftools.py {outtable} {filt_outdir} {threads}
 
 # if any other bcftools jobs are hanging due to priority, change the account
 source {bash_variables}
