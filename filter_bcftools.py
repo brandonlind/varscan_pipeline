@@ -65,6 +65,7 @@ def main(snptable, outdir):
         lview=lview,
         dview=dview,
         assert_rowcount=False,
+        reset_index=False,
         functions=create_fundict(filter_snps)
     )
     
