@@ -250,7 +250,7 @@ def make_adaptree_sh(bamfiles, bedfile, shdir, pool, pooldir, program, parentdir
     
     cmd, finalvcf = get_bcftools_cmd(bamfiles, bedfile, bednum, vcf, ref, pooldir, program)
 
-    outtable = finalvcf.replace('.vcf.gz', '.txt')
+    outtable = finalvcf.replace('.vcf', '.txt')
     filt_outdir = op.dirname(finalvcf)
 
     bash_variables = op.join(parentdir, 'bash_variables')
@@ -280,7 +280,7 @@ gatk VariantsToTable --variant {finalvcf}.gz -F CHROM -F POS -F REF -F ALT -F AF
 -O {outtable}
 module unload gatk/4.4.0.0
 
-# mask genotypes with low quality or depth, filter loci for <=40% missing data
+# mask genotypes with low genotype quality or depth, refilter loci for <=40% missing data
 source $HOME/activate_py3124.sh
 python $HOME/pipeline/filter_bcftools.py {outtable} {filt_outdir} {threads}
 
@@ -383,7 +383,7 @@ def main(parentdir, pool):
                                    parentdir)
 
         # create .sh file to combine bcftools parallels using jobIDs as dependencies
-        create_combine(pids, parentdir, pool, program, shdir, finalvcfs)
+        #create_combine(pids, parentdir, pool, program, shdir, finalvcfs)
 
 
 if __name__ == "__main__":
