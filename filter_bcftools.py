@@ -1,14 +1,27 @@
 """Filter output from bcftools."""
 from pythonimports import *  # https://github.com/brandonlind/pythonimports/blob/master/pythonimports.py
 
-def filter_snps(df):
-    """Mask genotypes if DP<5 or GQ<20, remove loci with >40% missing data.
+
+def remove_dups(df):
+    """Remove loci that are on multiple lines."""
+    
+    locus_dict = df.index.value_counts()
+    keep_loci = [locus for locus, count in locus_dict.items() if count == 1]
+
+    df = df[df.index.isin(keep_loci)]
+
+    return df
+
+
+def mask_snps(df):
+    """Mask genotypes if DP<5 or GQ<20, calculate % missing data.
     
     Parameters
     ----------
     df : pandas.DataFrame
         - rows = loci; output from gatk VariantsToTable
     """
+    from pythonimports import pbar
     import numpy as np
     import pandas as pd
     
@@ -25,13 +38,15 @@ def filter_snps(df):
     # all genotype columns
     all_gtcols = mg_gtcols + p_gtcols
     
+    # column to fill in later
     df['frac_missing'] = np.nan
     
-    # remove loci that are on multiple lines
     df.index = df['CHROM'] + "-" + df['POS'].astype(str)
-    df = df.loc[df.index.value_counts() == 1]
+#    df = remove_dups(df)
     
-    for locus in df.index:
+    for locus in pbar(df.index):
+        if type(df.loc[locus]) == pd.DataFrame:  # if a locus is on more than one line, skip
+            continue
         # for the set of haploid seedlings OR diploid parent(s)
         for gtcols, gqcols, dpcols in [(mg_gtcols, mg_gqcols, mg_dpcols), (p_gtcols, p_gqcols, p_dpcols)]:
 #             print(len(gtcols), len(gqcols), len(dpcols))
@@ -46,11 +61,7 @@ def filter_snps(df):
             gts = df.loc[locus, gtcols].isin(['.', './.'])
 
             # if a locus does not pass thresholds, mask it's genotype
-            print('getting good cols')
-#             try:
             goodcols = pd.Series(gtcols, index=gtcols)[(gqs) | (dps) | (gts)].tolist()
-#             except:
-#                 return gtcols, gqs, dps, gts
             if len(goodcols) > 0:
                 df.loc[locus, goodcols] = np.nan
 
@@ -66,10 +77,14 @@ def main(snptable, outdir):
         dview=dview,
         assert_rowcount=False,
         reset_index=False,
-        functions=create_fundict(filter_snps)
+        functions=create_fundict(mask_snps)
     )
-    
-    df = df[(df.index.value_counts() == 1) & (df.frac_missing <=.40)]
+
+    print('nrow(df) = ', nrow(df))
+    df = remove_dups(df)
+    print('nrow(df) = ', nrow(df))
+    df = df[df.frac_missing <= 0.40]
+    print('nrow(df) = ', nrow(df))
     
     outfile = f'{outdir}/%s' % op.basename(snptable).replace('.txt', '_init-filt.txt')
     
@@ -84,5 +99,6 @@ if __name__ == '__main__':
     thisfile, snptable, outdir, num_engines = sys.argv
     
     lview, dview, cluster_id = start_engines(n=int(num_engines))
+    dview['remove_dups'] = remove_dups
     
     main(snptable, outdir)
