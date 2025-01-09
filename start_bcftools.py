@@ -276,7 +276,7 @@ module load StdEnv/2023
 module load gatk/4.4.0.0
 gatk IndexFeatureFile --input {finalvcf}.gz
 gatk VariantsToTable --variant {finalvcf}.gz -F CHROM -F POS -F REF -F ALT -F AF -F QUAL -F TYPE -F FILTER -F ADP -F WT -F HET -F HOM -F NC \
--GF GT -GF GQ -GF SDP -GF DP -GF PL -GF PVAL -GF AD -GF RD \
+-GF GT -GF GQ -GF SDP -GF DP -GF PL -GF PVAL -GF AD -GF RD -GF GP\
 -O {outtable}
 module unload gatk/4.4.0.0
 
