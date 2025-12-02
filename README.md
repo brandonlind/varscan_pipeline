@@ -22,7 +22,6 @@ The snp table (downstream from the minimally filtered vcf files above - output f
 # the vcf filtering steps of the pipeline are as follows for each parallel call (determined by bedfiles) - after this, all vcfs are combined with bcftools concat
 bcftools mpileup --min-MQ 20 --min-BQ 20 -B -f {ref} {smallbams} -a {annotation} | \
 bcftools call -G - -Ov -m -f GQ,GP --samples-file {sampfile} > {tmpdir}/{op.basename(vcf)}
-bgzip -f {finalvcf} --threads {threads}
 ```
 
 Once started, the pipeline will carry on through SNP filtering, automatically sbatching jobs when appropriate. If applied on startup, user will receive an email when pipeline is finished. Various ways to customize available, see help and usage below.
@@ -59,7 +58,7 @@ Once started, the pipeline will carry on through SNP filtering, automatically sb
 
 ---
 
-I HAVE NOT UPDATED ANYTHING BELOW HERE TO REFLECT THE BCFTOOLS PIPELINE (except help menu)
+I HAVE NOT UPDATED ANYTHING BELOW HERE TO REFLECT THE BCFTOOLS PIPELINE
 
 ---
 ## Pipeline workflow
