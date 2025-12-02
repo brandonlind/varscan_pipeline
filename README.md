@@ -10,16 +10,54 @@
 
 # bcftools individually sequenced pipeline
 
-WARNING - THIS IS NOT THE VARSCAN PIPELINE, THIS IS USED FOR INDIVIDUAL DATA. THE PLOIDY INFORMATION FOR EACH SAMPLE IS PASSED TO BCFTOOLS WITH --samples-file. THIS PIPELINE WILL END WITH MINIMALLY FILTERED SNPS IN VCF FORMAT (MAF >= 0.0, MQ >=20, GQ>=20, missing data < 25%). TRIMMING, MAPPING, AND PARALLELIZATION ARE THE SAME AS VARSCAN PIPELINE (except depth > 5 for each sample, AC>=5). OTHER FEATURES ARE NOT AVAILABLE:  `--translate` `--rm_paralogs` `--rm_repeats`
+WARNING - THIS IS NOT THE VARSCAN PIPELINE, THIS IS USED FOR INDIVIDUAL-LEVEL DATA. THE PLOIDY INFORMATION FOR EACH SAMPLE IS PASSED TO BCFTOOLS WITH --samples-file. THIS PIPELINE WILL END WITH MINIMALLY FILTERED SNPS IN VCF FORMAT (MAF >= 0.0, MQ >=20, GQ>=20, missing data < 50%), OR ADDITIONAL FILTERING ON A SNPTABLE DOWNSTREAM FROM THE VCF.
+OTHER FEATURES ARE NOT AVAILABLE:  `--translate` `--rm_paralogs` `--rm_repeats`.
 
+Mapping done now with bwa-mem2 instead of earlier version of bwa.
+
+The minimally-filtered VCF file towards the end of the pipeline will (one for each bedfile or chromosome) will be in <parentdir>/<pool_name>/04_realign/tmp.
+
+The snp table (downstream from the minimally filtered vcf files above - output from filter_bcftools.py) will be in <parentdir>/<pool_name>/bcftools. This SNP table will have multi-allelic sites removed, remove loci with >40% missing data, calculate AF, mask genotype calls with DP < 5 and GQ < 20 (GQ filter redundant to above, but function is set up so I can adjust GQ for manual filtering after pipeline completion by importing function into python), update HET counts after masking, TYPE to NO_VARIATION if masking affects this, and update AD (across-sample sums).
 ```
-# the final steps of the pipeline are as follows for each parallel call (determined by bedfiles) - after this, all vcfs are combined with bcftools concat
-bcftools mpileup --min-MQ 20 --min-BQ 20 -B -f [ref] [bamfiles] | -a "DP,AD" | bcftools call -G - -Ov -mv -f GQ,GP --samples-file {sampfile} > initial.vcf
-bcftools filter -i 'FORMAT/DP>=5 & MQ>=20 & FORMAT/GQ >=20 & AC >=5 & F_MISSING <0.25 & MAF>=0.01' initial.vcf > final.vcf
-bgzip -f final.vcf
+# the vcf filtering steps of the pipeline are as follows for each parallel call (determined by bedfiles) - after this, all vcfs are combined with bcftools concat
+bcftools mpileup --min-MQ 20 --min-BQ 20 -B -f {ref} {smallbams} -a {annotation} | \
+bcftools call -G - -Ov -m -f GQ,GP --samples-file {sampfile} > {tmpdir}/{op.basename(vcf)}
+bgzip -f {finalvcf} --threads {threads}
 ```
 
-Call SNPs and INDELs across individuals using samtools/bcftools. Once started, the pipeline will carry on through SNP filtering, automatically sbatching jobs when appropriate. If applied on startup, user will receive an email when pipeline is finished. Various ways to customize available, see help and usage below.
+Once started, the pipeline will carry on through SNP filtering, automatically sbatching jobs when appropriate. If applied on startup, user will receive an email when pipeline is finished. Various ways to customize available, see help and usage below.
+
+#### conda envs, module loads, sbatch flags
+
+- be aware of module load commands, which are specific to UConn servers
+- I had to add partion and QOS sbatch flags, specific to UConn servers
+- $HOME/conda_init.sh
+	- the conda initialize command, and activatation of a python 3.12.2 env suitable for github.com/brandonlind/pythonimports
+ 		- the py312 env isn't necessary until filter_bcftools.py at end of pipeline, but initialize is needed
+- pipeline env
+	- referenced as bcftools_env
+ 	```
+  	conda create -n bcftools_env python==3.7.4
+	pip install -r ~/pipeline/requirements.txt
+	```
+- fastp_1_0_1
+	- `conda install bioconda::fastp`
+- gatk3_8
+	- `conda install bioconda::gatk`
+- bcftools_1_21
+	```
+ 	conda install bioconda::bcftools
+	conda install conda-forge::parallel
+ 	```
+- gatk_4_6_2_0
+	```
+ 	# wget source release from GitHub for gatk-4.6.2.0
+	# unzip the zip release
+	cd gatk-4.6.2.0
+	conda env create -n gatk_4_6_2_0 -f gatkcondaenv.yml
+ 	```
+
+---
 
 I HAVE NOT UPDATED ANYTHING BELOW HERE TO REFLECT THE BCFTOOLS PIPELINE (except help menu)
 
