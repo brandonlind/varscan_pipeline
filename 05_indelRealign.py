@@ -28,26 +28,28 @@ bash_variables = op.join(parentdir, 'bash_variables')
 
 email_text = get_email_info(parentdir, '05')
 text = f'''#!/bin/bash
-#SBATCH --time=12:00:00
-#SBATCH --mem=4000M
+#SBATCH --mem=10G
 #SBATCH --ntasks=1
 #SBATCH --job-name={pool}-{samp}-indelRealign
-#SBATCH --output={pool}-{samp}-indelRealign_%j.out 
+#SBATCH --partition=general
+#SBATCH --qos=general
+#SBATCH -o %x_%j.out
 {email_text}
 
-module load StdEnv/2018.3
-module load java
-module load gatk/3.8
-export _JAVA_OPTIONS="-Xms256m -Xmx7g"
-java -Djava.io.tmpdir=$SLURM_TMPDIR -jar $EBROOTGATK/GenomeAnalysisTK.jar \
--T IndelRealigner -R {ref} -I {dupfile} -targetIntervals {listfile} -o {realbam}
-module unload gatk
+hostname
+date
+
+echo INDEL_REALIGNER
+source $HOME/conda_init.sh
+conda activate gatk3_8
+export _JAVA_OPTIONS="-Xms256m -Xmx8g"
+gatk3 -T IndelRealigner -R {ref} -I {dupfile} -targetIntervals {listfile} -o {realbam}
+
+date
 
 # sbatch varscan jobs if all pooled bamfiles have been created
 source {bash_variables}
-# python $HOME/pipeline/start_varscan.py {parentdir} {pool}
 python $HOME/pipeline/start_bcftools.py {parentdir} {pool}
-python $HOME/pipeline/balance_queue.py bedfile {parentdir}
 
 '''
 
@@ -61,7 +63,3 @@ with open(file, 'w') as o:
 os.chdir(shdir)
 print('shdir = ', shdir)
 subprocess.call([shutil.which('sbatch'), file])
-
-
-balance_queue.main('balance_queue.py', 'indelRealign', parentdir)
-balance_queue.main('balance_queue.py', 'realign', parentdir)
