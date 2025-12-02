@@ -72,27 +72,46 @@ def getbwatext(r1out, r2out):
 
     print('rgpucmd = ', rgpucmd)
     
-    return (sortfile, f'''# get RGID and RGPU
+    return (sortfile, f'''echo RGID_RGPU
 {rgidcmd}
 {rgpucmd}
 
-# map, sam to bam, sort by coordinate, index
-module load StdEnv/2018.3
-module load bwa/0.7.17
-bwa mem -t 32 -M -R "@RG\\tID:$RGID\\tSM:{rgsm}\\tPL:{rgpl}\\tLB:{rglb}\\tPU:$RGPU" \
-{ref} {r1out} {r2out} > {samfile}
-module unload bwa
+date
 
-module load samtools/1.9
-samtools view -@ 32 -q 20 -F 0x0004 -f 0x0002 -Sb {samfile} > {bamfile}
-samtools sort -@ 32 {bamfile} > {sortfile}
-samtools index {sortfile}
+echo BWA
+
+module load bwa-mem2/2.2.1
+module load samtools/1.19.2
+
+bwa-mem2 mem -t 32 -M -R "@RG\\tID:$RGID\\tSM:{rgsm}\\tPL:{rgpl}\\tLB:{rglb}\\tPU:$RGPU" \
+{ref} {r1out} {r2out} | \
+samtools view -@ 32 -q 20 -f 0x0002 -F 4 -F 256 -F 2048 -Sb - | \
+samtools sort -@ 32 - > {sortfile}
+
+module unload bwa-mem2
+
+date
+
+
+echo FLAGSTAT
+
 samtools flagstat {sortfile} > {flagfile}
-module unload samtools
 
-module load bedtools/2.27.1
+date
+
+
+echo INDEX
+
+samtools index -@ 32 {sortfile}
+
+date
+
+
+echo BAMTOBED
+
 bedtools bamtobed -i {sortfile} > {coordfile}
-module unload bedtools
+
+date
 
 ''')
 
@@ -109,16 +128,21 @@ pkldump(sortfiles, op.join(pooldir, '%s_sortfiles.pkl' % samp))
 # send it off
 email_text = get_email_info(parentdir, '02')
 text = f'''#!/bin/bash
-#SBATCH --time=23:59:00
 #SBATCH --mem=55000M
-#SBATCH --nodes=1
-#SBATCH --ntasks=32
-#SBATCH --cpus-per-task=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=32
 #SBATCH --job-name={pool}-{samp}-bwa
-#SBATCH --output={pool}-{samp}-bwa_%j.out
+#SBATCH --partition=general
+#SBATCH --qos=general
+#SBATCH -o %x_%j.out
 {email_text}
 
+hostname
+date
+
 {bwatext}
+
+date
 
 # mark and build
 source {bash_variables}
@@ -134,7 +158,3 @@ with open(qsubfile, 'w') as o:
 os.chdir(bwashdir)
 print('shdir = ', shdir)
 subprocess.call([shutil.which('sbatch'), qsubfile])
-
-balance_queue = op.join(os.environ['HOME'], 'pipeline/balance_queue.py')
-subprocess.call([sys.executable, balance_queue, 'bwa', parentdir])
-subprocess.call([sys.executable, balance_queue, 'trim', parentdir])
