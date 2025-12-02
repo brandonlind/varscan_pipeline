@@ -54,8 +54,8 @@ def create_sh(pooldirs, poolref, parentdir):
                          op.join(os.environ['HOME'], 'pipeline/01_trim-fastq.py'),
                          pooldir,
                          ref])
-    print("\n")
-    balance_queue.main('balance_queue.py', 'trim', parentdir)
+    # print("\n")
+    # balance_queue.main('balance_queue.py', 'trim', parentdir)
 
 
 def get_datafiles(parentdir, f2pool, data):
@@ -80,12 +80,13 @@ def get_datafiles(parentdir, f2pool, data):
         print(Bcolors.WARNING +
               'WARN: there are %s fastq files in %s than in datatable.txt' % (desc, parentdir) +
               Bcolors.ENDC)
-        print(Bcolors.BOLD + 'Here are the files in %s' % parentdir + Bcolors.ENDC)
-        for x in files:
-            print(op.basename(x))
-        print(Bcolors.BOLD + 'Here are the files in datatable.txt' + Bcolors.ENDC)
-        for x in datafiles:
-            print(x)
+        print(Bcolors.BOLD + 'There are %s files in the datatable table and %s files in the parentdir' % (len(datafiles), len(files)))
+        # print(Bcolors.BOLD + 'Here are the files in %s' % parentdir + Bcolors.ENDC)
+        # for x in files:
+        #     print(op.basename(x))
+        # print(Bcolors.BOLD + 'Here are the files in datatable.txt' + Bcolors.ENDC)
+        # for x in datafiles:
+        #     print(x)
         askforinput(newline='')
 
     except NameError:
@@ -136,20 +137,26 @@ def make_pooldirs(data, parentdir):
     return pooldirs
 
 
-def create_samples_file(data, parentdir):
+def create_samples_file(data, parentdir, ploidy):
     """Create samples file for bcftools --samples-file flag to incorporate ploidy information."""
     print(Bcolors.BOLD + "\ncreating samples file for bcftools --samples-file flag ..." + Bcolors.ENDC)
-    for pool in uni(data['pool_name']):
-        pooldir = op.join(parentdir, pool)
-        pooldata = data[data['pool_name']==pool]
-        sample_data = []
-        for row in pooldata.index:
-            samp,ploidy = pooldata.loc[row, ['rgsm', 'ploidy']]
-            sample_data.append('%s\t%s' % (samp, ploidy))
-        samples_file = op.join(pooldir, 'samples_file.txt')
-        with open(samples_file, 'w') as o:
-            o.write("%s" % '\n'.join(sample_data))
-        print('\t', samples_file)
+    for pool in keys(ploidy):
+        ploidy_df = pd.DataFrame(ploidy[pool]).reset_index()  # columns = index (samp), ploidy
+        samples_file = op.join(parentdir, pool, 'samples_file.txt')
+        ploidy_df.to_csv(samples_file, sep='\t', index=False, header=False)
+        print('\t', pool, samples_file)
+    # for pool in uni(data['pool_name']):
+    #     pooldir = op.join(parentdir, pool)
+    #     pooldata = data[data['pool_name']==pool]
+    #     sample_data = []
+    #     for row in pooldata.index:
+    #         samp,ploidy = pooldata.loc[row, ['rgsm', 'ploidy']]
+    #         sample_data.append('%s\t%s' % (samp, ploidy))
+    #     samples_file = op.join(pooldir, 'samples_file.txt')
+    #     with open(samples_file, 'w') as o:
+    #         o.write("%s" % '\n'.join(sample_data))
+    #     print('\t', samples_file)
+    pass
 
 
 def create_all_bedfiles(poolref, numpools, num_beds):
@@ -203,7 +210,8 @@ def check_ref_assumptions(samp, ref):
         print('exiting 00_start-pipeline.py')
         exit()
     needed = []
-    for suffix in ['.dict', '.amb', '.ann', '.bwt', '.fai', '.pac', '.sa']:
+    # for suffix in ['.dict', '.amb', '.ann', '.bwt', '.fai', '.pac', '.sa']:
+    for suffix in ['.dict', '.amb', '.ann', '.bwt.2bit.64', '.0123', '.fai', '.pac']: # no .sa + 2bit and 0123
         refext = ref + suffix if suffix != '.dict' else ref.split('.fa')[0] + suffix
         if not op.exists(refext):
             needed.append(refext)
@@ -504,15 +512,14 @@ different pool assignments: %s' % samp + Bcolors.ENDC)
     pkldump(poolref, op.join(parentdir, 'poolref.pkl'))
     pkldump(adaptors, op.join(parentdir, 'adaptors.pkl'))
     pkldump(samp2pool, op.join(parentdir, 'samp2pool.pkl'))
-    return f2pool, poolref
+    return f2pool, poolref, ploidy
 
 
 def check_reqs(parentdir):
     """Check for assumed exports."""
     print(Bcolors.BOLD + '\nChecking for exported variables' + Bcolors.ENDC)
-    variables = ['SLURM_ACCOUNT', 'SBATCH_ACCOUNT', 'SALLOC_ACCOUNT',
-#                  'VARSCAN_DIR', 'PYTHONPATH', 'SQUEUE_FORMAT']
-                 'PYTHONPATH', 'SQUEUE_FORMAT']
+    #'SLURM_ACCOUNT', 'SBATCH_ACCOUNT', 'SALLOC_ACCOUNT', 'VARSCAN_DIR', 
+    variables = ['PYTHONPATH', 'SQUEUE_FORMAT']
 
     # check to see if bash_variables file has been created
     if not op.exists(op.join(parentdir, 'bash_variables')):
@@ -551,20 +558,20 @@ so it can be used later in pipeline, then source this file before restarting pip
             exit()
 
     # check for programs
-    for program in [op.join(os.environ['VARSCAN_DIR'], 'VarScan.v2.4.3.jar')]:
-        if not op.exists(program):
-            print(Bcolors.BOLD +
-                  Bcolors.FAIL +
-                  "FAIL: could not find the following program: %s" % program +
-                  Bcolors.ENDC)
+    # for program in [op.join(os.environ['VARSCAN_DIR'], 'VarScan.v2.4.3.jar')]:
+    #     if not op.exists(program):
+    #         print(Bcolors.BOLD +
+    #               Bcolors.FAIL +
+    #               "FAIL: could not find the following program: %s" % program +
+    #               Bcolors.ENDC)
 
-    # make sure an environment can be activated (activation assumed to be in $HOME/.bashrc)
-    for exe in ['activate']:
-        if distutils.spawn.find_executable(exe) is None:
-            print('\tcould not find %s in $PATH\nexiting 00_start-pipeline.py' % exe)
-            if exe == 'activate':
-                print('\t\t(the lack of activate means that the python env is not correctly installed)')
-            exit()
+    # # make sure an environment can be activated (activation assumed to be in $HOME/.bashrc)
+    # for exe in ['activate']:
+    #     if distutils.spawn.find_executable(exe) is None:
+    #         print('\tcould not find %s in $PATH\nexiting 00_start-pipeline.py' % exe)
+    #         if exe == 'activate':
+    #             print('\t\t(the lack of activate means that the python env is not correctly installed)')
+    #         exit()
     # make sure pipeline can be accessed via $HOME/pipeline
     if not op.exists(op.join(os.environ['HOME'], 'pipeline')):
         print('\tcould not find pipeline via $HOME/pipeline\n\texiting 00_start-pipeline.py')
@@ -686,8 +693,8 @@ def main():
     # look for exported vars (should be in .bashrc)
     check_reqs(args.parentdir)
 
-    # determine which slurm accounts to use
-    balance_queue.get_avail_accounts(args.parentdir, save=True)
+    # # determine which slurm accounts to use
+    # balance_queue.get_avail_accounts(args.parentdir, save=True)
 
     # read in the datatable
     data = read_datatable(args.parentdir)
@@ -695,12 +702,12 @@ def main():
     # create directories for each group of pools to be combined
     pooldirs = make_pooldirs(data, args.parentdir)
     
-    # create --samples-file for bcftools
-    create_samples_file(data, args.parentdir)
-    
     # parse the datatable
-    f2pool, poolref = parse_datatable(data,
-                                      args.parentdir)
+    f2pool, poolref, ploidy = parse_datatable(data,
+                                              args.parentdir)
+    
+    # create --samples-file for bcftools
+    create_samples_file(data, args.parentdir, ploidy)
 
     # create bedfiles to parallelize varscan later on
     create_all_bedfiles(poolref, len(pooldirs), args.num_beds)
