@@ -185,20 +185,18 @@ def get_prereqs(bedfile, parentdir, pool, program):
     pooldir = op.join(parentdir, pool)
     outdir = makedir(op.join(pooldir, program))
     vcf = op.join(outdir, f'{pool}_{program}_bedfile_{num}.vcf')
-    return (num, ref, vcf)
+    return (num, ref, vcf, outdir)
 
 
-def get_small_bam_cmds(bamfiles, bednum, bedfile):
+def get_small_bam_cmds(bamfiles, bednum, bedfile, pooldir):
     """Get samtools commands to reduce a bamfile to intervals in the bedfile."""
+    tmpdir = makedir(op.join(pooldir, '04_realign/tmp'))
     smallbams = []
-    #cmds = '''module load java\nmodule load samtools/1.9\n'''
     cmds = []
     for bam in bamfiles:
         pool = op.basename(bam).split("_realigned")[0]
-        smallbam = f'$SLURM_TMPDIR/{pool}_realigned_{bednum}.bam'
+        smallbam = f'{tmpdir}/{pool}_realigned_{bednum}.bam'
         cmd = f'''samtools view -b -L {bedfile} {bam} > {smallbam}'''
-        # cmd = f'''samtools view -b -L {bedfile} {bam} > {smallbam}\n'''
-        # cmds = cmds + cmd
         cmds.append(cmd)
         smallbams.append(smallbam)
 
@@ -209,12 +207,12 @@ def get_small_bam_cmds(bamfiles, bednum, bedfile):
         o.write('\n'.join(cmds))
                 
     # return (smallbams, cmds)
-    return (smallbams, cmd_file)
+    return (smallbams, cmd_file, tmpdir)
 
 # export BCFTOOLS_PLUGINS='/home/lindb/src/bcftools-1.11/plugins'
 def get_bcftools_cmd(bamfiles, bedfile, bednum, vcf, ref, pooldir, program):
     # smallbams, smallcmds = get_small_bam_cmds(bamfiles, bednum, bedfile)
-    smallbams, cmd_file = get_small_bam_cmds(bamfiles, bednum, bedfile)
+    smallbams, cmd_file, tmpdir = get_small_bam_cmds(bamfiles, bednum, bedfile, pooldir)
     smallbams = ' '.join(smallbams)
     sampfile = op.join(pooldir, 'samples_file.txt')
     # determine MAF
@@ -224,18 +222,26 @@ def get_bcftools_cmd(bamfiles, bedfile, bednum, vcf, ref, pooldir, program):
     else:
         maf = 0.0
 
-    #masked_vcf = op.basename(vcf).replace('.vcf', '_masked.vcf')
-    #/home/lindb/src/bcftools-1.11/bcftools +setGT $SLURM_TMPDIR/{op.basename(vcf)} -o $SLURM_TMPDIR/{masked_vcf} -- -t q -i 'FORMAT/DP<5 || FORMAT/GQ<20' -n .
-    #/home/lindb/src/bcftools-1.11/bcftools filter -e 'F_MISSING > 0.20 || MAF <= 0' $SLURM_TMPDIR/{masked_vcf} > {vcf}
+    annotation = "FORMAT/DP,FORMAT/AD,FORMAT/SP,FORMAT/SCR,INFO/AD"
     
-    cmd = f'''module load parallel
-module load samtools/1.9
-cat {cmd_file} | parallel -j {threads} --progress --eta
-module unload samtools/1.9
+    cmd = f'''echo SAMTOOLS_VIEW
+module load parallel
+module load samtools/1.19.2
+cat {cmd_file} | parallel -j {threads}
+module unload samtools
+date
 
-/home/lindb/src/bcftools-1.11/bcftools mpileup --min-MQ 20 --min-BQ 20 -B -f {ref} {smallbams} -a "DP,AD" | \
-/home/lindb/src/bcftools-1.11/bcftools call -G - -Ov -mv -f GQ,GP --samples-file {sampfile} > $SLURM_TMPDIR/{op.basename(vcf)}
-/home/lindb/src/bcftools-1.11/bcftools filter -e 'F_MISSING > 0.40 || MAF <= 0' $SLURM_TMPDIR/{op.basename(vcf)} > {vcf}
+echo BCFTOOLS_MPILEUP
+source $HOME/conda_init.sh
+conda activate bcftools_1_21
+bcftools mpileup --min-MQ 20 --min-BQ 20 -B -f {ref} {smallbams} -a {annotation} | \
+bcftools call -G - -Ov -m -f GQ,GP --samples-file {sampfile} > {tmpdir}/{op.basename(vcf)}
+date
+
+echo FILTER
+bcftools filter -e 'F_MISSING > 0.50' {tmpdir}/{op.basename(vcf)} > {vcf}
+date
+module unload bcftools
 '''
     # final vcf
     outdir = makedir(op.join(pooldir, program))
@@ -246,7 +252,7 @@ module unload samtools/1.9
 
 def make_adaptree_sh(bamfiles, bedfile, shdir, pool, pooldir, program, parentdir):
     """Create sh file for bcftools command."""
-    bednum, ref, vcf = get_prereqs(bedfile, parentdir, pool, program)
+    bednum, ref, vcf, outdir = get_prereqs(bedfile, parentdir, pool, program)
     
     cmd, finalvcf = get_bcftools_cmd(bamfiles, bedfile, bednum, vcf, ref, pooldir, program)
 
@@ -254,39 +260,52 @@ def make_adaptree_sh(bamfiles, bedfile, shdir, pool, pooldir, program, parentdir
     filt_outdir = op.dirname(finalvcf)
 
     bash_variables = op.join(parentdir, 'bash_variables')
+
+    tmpdir = makedir(op.join(outdir, 'tmp'))
+    
     text = f'''#!/bin/bash
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task={threads}
 #SBATCH --job-name={pool}-{program}_bedfile_{bednum}
-#SBATCH --time='1-00:00:00'
-#SBATCH --mem=4000M
-#SBATCH --output={pool}-{program}_bedfile_{bednum}_%j.out
+#SBATCH --mem=90G
+#SBATCH --partition=general
+#SBATCH --qos=general
+#SBATCH -o %x_%j.out
 
-# run bcftools (v1.11), filter
-module load StdEnv/2018.3
+hostname
+date
+
+export TMPDIR={tmpdir}
+
+# run bcftools, filter
 {cmd}
 
-# gzip outfiles to save space
-module load nixpkgs/16.09  gcc/7.3.0 htslib/1.9
+echo BGZIP
+module load htslib/1.22.1
 cd $(dirname {finalvcf})
 bgzip -f {finalvcf} --threads {threads}
+date
 
-# index and convert to table
-module load StdEnv/2023
-module load gatk/4.4.0.0
-gatk IndexFeatureFile --input {finalvcf}.gz
-gatk VariantsToTable --variant {finalvcf}.gz -F CHROM -F POS -F REF -F ALT -F AF -F QUAL -F TYPE -F FILTER -F ADP -F WT -F HET -F HOM -F NC \
--GF GT -GF GQ -GF SDP -GF DP -GF PL -GF PVAL -GF AD -GF RD -GF GP\
+echo INDEXING
+export PATH="/home/FCAM/blind/src/gatk-4.6.2.0:$PATH"
+source $HOME/conda_init.sh
+conda activate gatk_4_6_2_0
+gatk IndexFeatureFile --input {finalvcf}.gz --tmp-dir {tmpdir}
+date
+
+echo VARIANTS_TO_TABLE
+gatk VariantsToTable --variant {finalvcf}.gz -F CHROM -F POS -F REF -F ALT -F AF -F QUAL -F TYPE -F FILTER -F HET -F AD \
+-GF GT -GF GQ -GF DP -GF PL -GF AD -GF GP \
+--tmp-dir {tmpdir} \
+--split-multi-allelic \
 -O {outtable}
-module unload gatk/4.4.0.0
+date
 
-# mask genotypes with low genotype quality or depth, refilter loci for <=40% missing data
-source $HOME/activate_py3124.sh
+# mask genotypes with low genotype quality or depth, refilter loci for <=50% missing data
+echo FILTERING
+source $HOME/conda_init.sh  # purposefully not sourcing bash_variables
 python $HOME/pipeline/filter_bcftools.py {outtable} {filt_outdir} {threads}
-
-# if any other bcftools jobs are hanging due to priority, change the account
-source {bash_variables}
-python $HOME/pipeline/balance_queue.py {program} {parentdir}
+date
 
 '''
     file = op.join(shdir, f'{pool}-{program}_bedfile_{bednum}.sh')
@@ -297,7 +316,9 @@ python $HOME/pipeline/balance_queue.py {program} {parentdir}
 def sbatch(file):
     """Sbatch file."""
     os.chdir(op.dirname(file))
-    pid = subprocess.check_output([shutil.which('sbatch'), file]).decode('utf-8').replace("\n", "").split()[-1]
+    pid = subprocess.check_output(
+        [shutil.which('sbatch'), file]
+    ).decode('utf-8').replace("\n", "").split()[-1]
     print("sbatched %s" % file)
     #time.sleep(10)
     return pid
@@ -341,6 +362,8 @@ def create_combine(pids, parentdir, pool, program, shdir, finalvcfs):
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task={threads}
+#SBATCH --partition=general
+#SBATCH --qos=general
 #SBATCH --output={pool}-combine-{program}_%j.out
 {dependencies}
 {email_text}
@@ -350,9 +373,11 @@ def create_combine(pids, parentdir, pool, program, shdir, finalvcfs):
 
 # python $HOME/pipeline/combine_varscan.py {pooldir} {program} {pool}
 
+echo BCFTOOLS_CONCAT
+module load bcftools/1.20
+bcftools concat {joined} -O z -o {catout} --threads {threads}
+date
 
-/home/lindb/src/bcftools-1.11/bcftools concat {joined} -O z -o {catout} --threads {threads}
-    
 '''
     combfile = op.join(shdir, f'{pool}-combine-{program}.sh')
     with open(combfile, 'w') as o:
