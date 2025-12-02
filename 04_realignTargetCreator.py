@@ -27,28 +27,30 @@ bash_variables = op.join(parentdir, 'bash_variables')
 
 email_text = get_email_info(parentdir, '04')
 text = f'''#!/bin/bash
-#SBATCH --time=7-00:00:00
-#SBATCH --mem=30000M
-#SBATCH --nodes=1
-#SBATCH --ntasks=32
-#SBATCH --cpus-per-task=1
+#SBATCH --mem=50G
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=32
 #SBATCH --job-name={pool}-{samp}-realign
-#SBATCH --output={pool}-{samp}-realign_%j.out 
+#SBATCH --partition=general
+#SBATCH --qos=general
+#SBATCH -o %x_%j.out
 {email_text}
 
-# realign using the GATK
-module load StdEnv/2018.3
-module load java
-module load gatk/3.8
-export _JAVA_OPTIONS="-Xms256m -Xmx28g"
-java -Djava.io.tmpdir=$SLURM_TMPDIR -jar $EBROOTGATK/GenomeAnalysisTK.jar \
--T RealignerTargetCreator -R {ref} --num_threads 32 -I {dupfile} -o {listfile}
-module unload gatk
+hostname
+date
+
+echo REALIGNER
+source $HOME/conda_init.sh
+conda activate gatk3_8
+export _JAVA_OPTIONS="-Xms256m -Xmx48g"
+gatk3 -T RealignerTargetCreator -R {ref} --num_threads 32 -I {dupfile} -o {listfile}
+date
 
 # next step
 source {bash_variables}
 python $HOME/pipeline/05_indelRealign.py {pooldir} {samp} {dupfile} {ref}
 
+date
 '''
 
 # create shdir and shfile
@@ -63,8 +65,3 @@ with open(file, 'w') as o:
 os.chdir(shdir)
 print('shdir =', shdir)
 subprocess.call([shutil.which('sbatch'), file])
-
-# balance queue
-balance_queue = op.join(os.environ['HOME'], 'pipeline/balance_queue.py')
-subprocess.call([sys.executable, balance_queue, 'realign', parentdir])
-subprocess.call([sys.executable, balance_queue, 'mark', parentdir])
