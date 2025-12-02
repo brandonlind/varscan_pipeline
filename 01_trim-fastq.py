@@ -8,11 +8,10 @@
 # python 01a_trim-fastq.py /path/to/pooldir /path/to/ref.fa
 ###
 """
-
-
 import os, sys, time, shutil, subprocess
 from os import path as op
 from coadaptree import fs, pklload, pkldump, get_email_info
+from tqdm import tqdm
 
 # args
 thisfile, pooldir, ref = sys.argv
@@ -79,19 +78,26 @@ email_text = get_email_info(parentdir, '01')
 samp2_r1r2out = {}
 for samp, pairs in seq_pairs.items():
     samp2_r1r2out[samp] = []
-    header = '''#!/bin/bash
-#SBATCH --job-name=%(pool)s-%(samp)s-trim
-#SBATCH --time=02:59:00
+    header = f'''#!/bin/bash
+#SBATCH --job-name={pool}-{samp}-trim
 #SBATCH --mem=5000M
+#SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
-#SBATCH --output=%(pool)s-%(samp)s-trim_%%j.out
-%(email_text)s
+#SBATCH --partition=general
+#SBATCH --qos=general
+#SBATCH -o %x_%j.out
+{email_text}
 
-source %(bash_variables)s
+hostname
+date
 
-module load fastp/0.19.5
+source {bash_variables}
 
-''' % locals()
+#module load fastp/0.19.5
+conda activate fastp_1_0_1
+
+'''
+#''' % locals()
 
     newtext = ''''''
     for r1, r2 in pairs:
@@ -112,12 +118,14 @@ module load fastp/0.19.5
 -h %(html)s.html --cut_by_quality3 --thread 16 --json %(json)s.json \
 %(adaptor_cmd)s > %(logfile)s
 
+date
 ''' % locals()
         newtext = newtext + text
 
     suffix = '''# once finished, map using bwa mem
+source %(bash_variables)s
 python $HOME/pipeline/02_bwa-map_view_sort_index_flagstat.py %(parentdir)s %(samp)s
-
+date
 ''' % locals()
 
     text = header + newtext + suffix
@@ -131,9 +139,7 @@ pkldump(samp2_r1r2out, op.join(pooldir, 'samp2_r1r2out.pkl'))
 
 print('\tshcount =', len(shfiles))
 print('\tshdir = ', shtrimDIR)
-# qsub the files
-for sh in shfiles:
+# sbatch the files
+for sh in tqdm(shfiles):
     os.chdir(op.dirname(sh))     # want sbatch outfiles in same folder as sh file
-    print('\tshfile=', sh)
     subprocess.call([shutil.which('sbatch'), sh])
-    time.sleep(2)
