@@ -204,12 +204,13 @@ def determine_jobs_per_pool(numpools, totaljobs):
     cluster ID can be: 'cedar', 'graham', 'beluga'
     If graham/beluga, job limit is 1000 jobs. If cedar, unlimited job number.
     """
-    cluster = os.environ['CC_CLUSTER']
-    if cluster in ['graham', 'beluga']:
-        jobs_per_pool = math.floor(totaljobs / numpools)
-    else:
-        jobs_per_pool = totaljobs
-    return jobs_per_pool
+    # cluster = os.environ['CC_CLUSTER']
+    # if cluster in ['graham', 'beluga']:
+    #     jobs_per_pool = math.floor(totaljobs / numpools)
+    # else:
+    #     jobs_per_pool = totaljobs
+    # return jobs_per_pool
+    return totaljobs
 
 
 def main(ref, numpools=1, totaljobs=975):
